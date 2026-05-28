@@ -223,7 +223,7 @@ export default function App() {
               {refreshing ? (
                 <>
                   <span className="w-2 h-2 rounded-full bg-[#0284C7] animate-pulse" aria-hidden="true" />
-                  <span className="font-semibold text-[#0F172A]">Refreshing from Yahoo Finance…</span>
+                  <span className="font-semibold text-[#0F172A]">Loading market data…</span>
                   <span className="text-[#64748B]">{refreshProgress}/{sectors.length} sectors</span>
                 </>
               ) : hasAnyData ? (

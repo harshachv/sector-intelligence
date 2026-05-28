@@ -20,15 +20,8 @@ export default function Header({ searchSlot }: HeaderProps) {
           </span>
         </div>
         {searchSlot && (
-          <div className="flex-1 max-w-md mx-auto">{searchSlot}</div>
+          <div className="flex-1 max-w-md sm:ml-auto">{searchSlot}</div>
         )}
-        <nav className="hidden lg:flex items-center gap-1 text-[11px] font-medium text-[#64748B] flex-shrink-0">
-          <span className="px-2 py-1 hover:text-[#0284C7] cursor-default transition-colors">Sector Index</span>
-          <span className="text-[#E2E8F0]">•</span>
-          <span className="px-2 py-1 hover:text-[#0284C7] cursor-default transition-colors">Market Dashboard</span>
-          <span className="text-[#E2E8F0]">•</span>
-          <span className="px-2 py-1 hover:text-[#0284C7] cursor-default transition-colors">Live Signals</span>
-        </nav>
       </div>
     </header>
   );
