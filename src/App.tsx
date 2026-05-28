@@ -176,10 +176,37 @@ export default function App() {
     />
   );
 
+  // Compact global refresh control that lives in the sticky header (all pages).
+  const refreshSlot = (
+    <div className="flex items-center gap-2">
+      {refreshing ? (
+        <span className="hidden sm:inline text-[10px] font-mono text-[#64748B] whitespace-nowrap">
+          {refreshProgress}/{sectors.length}
+        </span>
+      ) : lastUpdated ? (
+        <span className="hidden md:inline text-[10px] text-[#64748B] whitespace-nowrap">
+          Updated {new Date(lastUpdated).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+        </span>
+      ) : null}
+      <button
+        onClick={refreshAllSectors}
+        disabled={refreshing}
+        aria-label="Refresh market data"
+        title="Refresh market data"
+        className="inline-flex items-center gap-1.5 rounded-md px-2 sm:px-2.5 py-1.5 text-xs font-semibold bg-[#0284C7] text-white hover:bg-[#0369A1] disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-[#0284C7] focus:ring-offset-1"
+      >
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className={refreshing ? 'animate-spin' : ''} aria-hidden="true">
+          <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="hidden sm:inline">{refreshing ? 'Refreshing' : 'Refresh'}</span>
+      </button>
+    </div>
+  );
+
   if (selectedSector && selectedStock) {
     return (
       <>
-        <Header searchSlot={searchSlot} />
+        <Header searchSlot={searchSlot} rightSlot={refreshSlot} />
         <StockDetailPage
           sector={selectedSector}
           stock={selectedStock}
@@ -193,7 +220,7 @@ export default function App() {
   if (selectedSector) {
     return (
       <>
-        <Header searchSlot={searchSlot} />
+        <Header searchSlot={searchSlot} rightSlot={refreshSlot} />
         <SectorDetailPage
           sector={selectedSector}
           allSectors={sectors}
@@ -214,49 +241,17 @@ export default function App() {
 
   return (
     <>
-      <Header searchSlot={searchSlot} />
+      <Header searchSlot={searchSlot} rightSlot={refreshSlot} />
       <main className="min-h-screen bg-[#F7F9FC]">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-6 space-y-6">
-          {/* Manual-refresh control — nothing loads automatically. */}
-          <div className={`rounded-lg border px-4 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 ${hasAnyData ? 'bg-white border-[#E2E8F0]' : 'bg-[#FEF3C7] border-[#D97706]/30'}`}>
-            <div className="flex items-center gap-2 text-xs">
-              {refreshing ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-[#0284C7] animate-pulse" aria-hidden="true" />
-                  <span className="font-semibold text-[#0F172A]">Loading market data…</span>
-                  <span className="text-[#64748B]">{refreshProgress}/{sectors.length} sectors</span>
-                </>
-              ) : hasAnyData ? (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-[#16A34A]" aria-hidden="true" />
-                  <span className="text-[#64748B]">
-                    Showing cached data{lastUpdated ? ` · last refreshed ${new Date(lastUpdated).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : ''}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <span className="w-2 h-2 rounded-full bg-[#D97706]" aria-hidden="true" />
-                  <span className="font-semibold text-[#0F172A]">No market data yet</span>
-                  <span className="text-[#64748B]">— press Refresh to pull live prices</span>
-                </>
-              )}
-            </div>
-            <button
-              onClick={refreshAllSectors}
-              disabled={refreshing}
-              className="inline-flex items-center justify-center gap-1.5 bg-[#0284C7] text-white rounded-md px-3 py-1.5 text-xs font-semibold hover:bg-[#0369A1] disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-[#0284C7] focus:ring-offset-1 self-start sm:self-auto"
-              aria-label="Refresh market data"
-            >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className={refreshing ? 'animate-spin' : ''} aria-hidden="true">
-                <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              {refreshing ? 'Refreshing…' : 'Refresh data'}
-            </button>
-          </div>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h1 className="text-xl font-bold text-[#0F172A]">Market Overview</h1>
-              <p className="text-xs text-[#64748B] mt-0.5">Real-time sector intelligence and market signals</p>
+              <p className="text-xs text-[#64748B] mt-0.5">
+                {!hasAnyData
+                  ? 'No market data yet — press Refresh (top right) to load live prices.'
+                  : 'Real-time sector intelligence and market signals'}
+              </p>
             </div>
             <TimeframeSelector selected={timeframe} onChange={setTimeframe} />
           </div>
