@@ -18,7 +18,24 @@ The app is inspired by a dense finance-terminal dashboard, but the final UI must
 - `lightweight-charts` v5 (TradingView open-source charting library, used on the Stock Detail page)
 - Bundled mock data by default; optional **Finnhub live data** via `VITE_FINNHUB_API_KEY` (free tier). See "Live vs. Mock" below.
 
-## Data policy — no mock at the display layer + manual refresh only
+## Data architecture — server-side cached snapshot (current model)
+
+The client no longer calls the upstream market APIs. Instead:
+
+- **`public/data/snapshot.json`** is a server-side cache: a per-ticker map of perfs + fundamentals (`src/data/snapshot.ts` defines the shape). The client **auto-loads it on every visit** and applies it to the sector universe (`applySnapshot` in `dataProvider.ts`). A copy is stashed in `localStorage` (`snapshot-cache`) for instant paint.
+- **Refresh** (header button, sector-detail button) = **re-pull the snapshot** (cache-busted), NOT the upstream APIs. So normal use never hammers the public proxies.
+- **`scripts/refresh.mjs`** is the only thing that hits upstream (Yahoo + stockanalysis, direct Node fetch). Run it where IPs aren't blocked — locally or CI, NOT a Vercel function:
+  - `npm run refresh` → **complete** (every ticker)
+  - `npm run refresh:delta` → **delta** (only tickers whose `updatedAt` is older than `--max-age-hours`, default 12)
+  - It writes `public/data/snapshot.json`.
+- **`.github/workflows/refresh-data.yml`** runs the script on a schedule (delta) + manual `workflow_dispatch` (choose complete/delta), commits the snapshot → Vercel auto-deploys → clients get the latest on next load.
+- The committed seed snapshot covers the top ~160 tickers by market cap; the rest show "—" until a full `npm run refresh`. Stock-detail **chart OHLCV is still fetched client-side on demand** (candles aren't in the snapshot) and cached in localStorage.
+
+## Responsive Sector Rankings table
+
+`SectorRankingsTable` progressively reveals columns: mobile (<sm) shows only `# / Sector / Growth` (fits 375px, no cut; whole row is tappable); `sm` adds Consensus / Regime / Action; `md` adds Crash Risk; `lg` shows all 11. Plus a visible scrollbar, right-edge fade, and a "Swipe table →" hint (only when actually scrollable).
+
+## (Legacy) Data policy — no mock at the display layer + manual refresh only
 
 Real Yahoo Finance data only (via public CORS proxy chain, no API key). See `docs/PROJECT_CONTEXT.md` for the full table. Key rules:
 

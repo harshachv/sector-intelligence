@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "refresh": "node scripts/refresh.mjs --mode complete",
+    "refresh:delta": "node scripts/refresh.mjs --mode delta"
   },
   "dependencies": {
     "lightweight-charts": "^5.2.0",

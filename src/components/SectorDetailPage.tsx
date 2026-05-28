@@ -1,9 +1,4 @@
-import { useEffect, useState } from 'react';
 import type { Sector, Timeframe } from '../types';
-import {
-  hydrateConstituents, hydrateFundamentals, recomputeSectorGrowth,
-  getCachedFundamentals,
-} from '../data/dataProvider';
 import { fmtPct, perfTextColor, isMissing } from '../utils/fmt';
 import RefreshButton from './RefreshButton';
 import TimeframeSelector from './TimeframeSelector';
@@ -22,6 +17,8 @@ interface SectorDetailPageProps {
   onBack: () => void;
   onSelectSector: (id: string) => void;
   onSelectStock: (ticker: string) => void;
+  onRefresh: () => void;
+  refreshing: boolean;
 }
 
 const TIMEFRAME_LABELS: Record<Timeframe, string> = {
@@ -45,51 +42,20 @@ function trendColor(label: string): string {
 }
 
 export default function SectorDetailPage({
-  sector: baseSector,
+  sector,
   allSectors,
   timeframe,
   onTimeframeChange,
   onBack,
   onSelectSector,
   onSelectStock,
+  onRefresh,
+  refreshing,
 }: SectorDetailPageProps) {
-  // CACHE-ONLY on mount — no network. `baseSector` already carries whatever
-  // the app-level cache seeding (and any prior Refresh) produced. We only
-  // enrich it with cached fundamentals. Fresh network data is pulled solely
-  // when the user clicks the Refresh button below.
-  const seedFromCache = (s: Sector): Sector => ({
-    ...s,
-    constituents: s.constituents.map(c => ({
-      ...c,
-      fundamentals: c.fundamentals ?? getCachedFundamentals(c.ticker),
-    })),
-  });
-
-  const [sector, setSector] = useState<Sector>(() => seedFromCache(baseSector));
-  const [liveCount, setLiveCount] = useState(
-    baseSector.constituents.filter(c => c.perf1d != null).length
-  );
-  const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    setSector(seedFromCache(baseSector));
-    setLiveCount(baseSector.constituents.filter(c => c.perf1d != null).length);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseSector]);
-
-  async function refreshSector() {
-    if (refreshing) return;
-    setRefreshing(true);
-    try {
-      const { constituents, liveCount } = await hydrateConstituents(baseSector.constituents);
-      setSector(recomputeSectorGrowth(baseSector, constituents));
-      setLiveCount(liveCount);
-      const withFundamentals = await hydrateFundamentals(constituents);
-      setSector(recomputeSectorGrowth(baseSector, withFundamentals));
-    } finally {
-      setRefreshing(false);
-    }
-  }
+  // Snapshot-driven: `sector` arrives fully hydrated from the app's snapshot
+  // application. The Refresh button re-pulls the server snapshot (App), which
+  // flows back down as new props — no upstream calls from this page.
+  const liveCount = sector.constituents.filter(c => c.perf1d != null).length;
 
   const m = sector.metrics[timeframe];
   // Average across hydrated sectors only (skip NaN).
@@ -140,7 +106,7 @@ export default function SectorDetailPage({
               </p>
             </div>
             <div className="flex items-center gap-3 self-start sm:self-auto">
-              <RefreshButton onClick={refreshSector} refreshing={refreshing} />
+              <RefreshButton onClick={onRefresh} refreshing={refreshing} />
               <TimeframeSelector selected={timeframe} onChange={onTimeframeChange} />
             </div>
           </div>

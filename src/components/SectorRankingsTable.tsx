@@ -18,6 +18,28 @@ const TIMEFRAME_LABELS: Record<Timeframe, string> = {
   '1Y': 'Yearly',
 };
 
+// Responsive column visibility — mobile shows only the essentials so the table
+// isn't a cramped horizontal scroll; progressively reveal more on wider screens.
+const C = {
+  always: '',
+  sm: 'hidden sm:table-cell',
+  md: 'hidden md:table-cell',
+  lg: 'hidden lg:table-cell',
+} as const;
+const COLUMNS = [
+  { label: '#', cls: C.always },
+  { label: 'Sector', cls: C.always },
+  { label: 'Growth', cls: C.always },
+  { label: 'Consensus', cls: C.sm },
+  { label: '3D Prob', cls: C.lg },
+  { label: '10D Prob', cls: C.lg },
+  { label: '20D Prob', cls: C.lg },
+  { label: 'Crash Risk', cls: C.md },
+  { label: 'Risk Scale', cls: C.lg },
+  { label: 'Regime', cls: C.sm },
+  { label: 'Action', cls: C.sm },
+];
+
 export default function SectorRankingsTable({ sectors, timeframe, onSelect }: SectorRankingsTableProps) {
   // Sort sectors with real growth values first (NaN goes to the bottom).
   const ranked = [...sectors].sort((a, b) => {
@@ -68,9 +90,11 @@ export default function SectorRankingsTable({ sectors, timeframe, onSelect }: Se
         <span className="text-[11px] text-[#64748B] hidden sm:inline ml-auto">
           Click a sector to open its stocks
         </span>
-        <span className="text-[11px] text-[#64748B] sm:hidden ml-auto whitespace-nowrap">
-          Swipe table →
-        </span>
+        {scrollable && (
+          <span className="text-[11px] text-[#64748B] sm:hidden ml-auto whitespace-nowrap">
+            Swipe table →
+          </span>
+        )}
       </div>
       <div className="relative bg-white rounded-lg border border-[#E2E8F0] shadow-sm overflow-hidden">
         {/* Right-edge fade cue: signals more columns are scrollable into view */}
@@ -82,13 +106,13 @@ export default function SectorRankingsTable({ sectors, timeframe, onSelect }: Se
           <table className="min-w-full text-sm" role="table">
             <thead>
               <tr className="bg-[#F1F5F9] border-b border-[#E2E8F0]">
-                {['#', 'Sector', 'Growth', 'Consensus', '3D Prob', '10D Prob', '20D Prob', 'Crash Risk', 'Risk Scale', 'Regime', 'Action'].map((col) => (
+                {COLUMNS.map((col) => (
                   <th
-                    key={col}
-                    className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-[#64748B] whitespace-nowrap"
+                    key={col.label}
+                    className={`px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-[#64748B] whitespace-nowrap ${col.cls}`}
                     scope="col"
                   >
-                    {col}
+                    {col.label}
                   </th>
                 ))}
               </tr>
@@ -127,31 +151,31 @@ export default function SectorRankingsTable({ sectors, timeframe, onSelect }: Se
                         {fmtPct(m.growth)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className={`px-4 py-3 whitespace-nowrap ${C.sm}`}>
                       <StatusBadge variant="consensus" value={m.consensus} />
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap min-w-[100px]">
+                    <td className={`px-4 py-3 whitespace-nowrap min-w-[100px] ${C.lg}`}>
                       <ProgressMetric value={m.prob3d} label="3D probability" />
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap min-w-[100px]">
+                    <td className={`px-4 py-3 whitespace-nowrap min-w-[100px] ${C.lg}`}>
                       <ProgressMetric value={m.prob10d} label="10D probability" />
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap min-w-[100px]">
+                    <td className={`px-4 py-3 whitespace-nowrap min-w-[100px] ${C.lg}`}>
                       <ProgressMetric value={m.prob20d} label="20D probability" />
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className={`px-4 py-3 whitespace-nowrap ${C.md}`}>
                       <StatusBadge variant="crashRisk" value={m.crashRisk} />
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className={`px-4 py-3 whitespace-nowrap ${C.lg}`}>
                       <StatusBadge variant="riskScale" value={m.riskScale} />
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className={`px-4 py-3 whitespace-nowrap ${C.sm}`}>
                       <div className="flex items-center gap-1.5">
                         <StatusDot regime={m.regime} />
                         <span className="text-xs text-[#0F172A]">{m.regime}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className={`px-4 py-3 whitespace-nowrap ${C.sm}`}>
                       <button
                         onClick={(e) => { e.stopPropagation(); onSelect(sector.id); }}
                         className="text-xs font-semibold text-[#0284C7] hover:text-[#0369A1] bg-[#E0F2FE] hover:bg-[#BAE6FD] rounded px-2.5 py-1.5 transition-colors focus:outline-none focus:ring-2 focus:ring-[#0284C7] focus:ring-offset-1"

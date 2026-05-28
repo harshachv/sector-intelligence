@@ -13,6 +13,32 @@
 import type { Candle, Constituent, Fundamentals, Sector } from '../types';
 import { fetchChart, perfsFromCandles, readCachedChart } from './yahoo';
 import { fetchFundamentals, readCachedFundamentals } from './stockanalysis';
+import { fundamentalsFromSnapshot, type MarketSnapshot } from './snapshot';
+
+/**
+ * Apply a server-side snapshot to the base sector universe, producing fully
+ * hydrated sectors (perfs + fundamentals + recomputed growth). Tickers absent
+ * from the snapshot render as "—". This is the primary data path: the client
+ * loads the snapshot on visit and applies it — no upstream calls.
+ */
+export function applySnapshot(base: Sector[], snap: MarketSnapshot): Sector[] {
+  return base.map(s => {
+    const constituents = s.constituents.map<Constituent>(c => {
+      const t = snap.tickers[c.ticker];
+      if (!t) {
+        return { ...c, perf1d: null, perf1w: null, perf1m: null, fundamentals: null };
+      }
+      return {
+        ...c,
+        perf1d: t.perf1d ?? null,
+        perf1w: t.perf1w ?? null,
+        perf1m: t.perf1m ?? null,
+        fundamentals: fundamentalsFromSnapshot(t),
+      };
+    });
+    return recomputeSectorGrowth(s, constituents);
+  });
+}
 
 export type DataMode = 'live' | 'failed';
 

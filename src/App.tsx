@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Sector, Timeframe } from './types';
 import { sectors as baseSectors, getSectorById as getBaseSectorById } from './data/sectors';
-import {
-  hydrateConstituents, hydrateFundamentals, hydrateConstituentsFromCache,
-  recomputeSectorGrowth,
-} from './data/dataProvider';
+import { applySnapshot } from './data/dataProvider';
+import { loadSnapshot, type MarketSnapshot } from './data/snapshot';
 import { fmtPct, isMissing } from './utils/fmt';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -16,35 +14,37 @@ import SectorDetailPage from './components/SectorDetailPage';
 import StockDetailPage from './components/StockDetailPage';
 import SearchBar from './components/SearchBar';
 
+/** Base sectors with perfs wiped to null / growth NaN — shown before a snapshot loads. */
+function blankSectors(): Sector[] {
+  return baseSectors.map<Sector>(s => ({
+    ...s,
+    constituents: s.constituents.map(c => ({ ...c, perf1d: null, perf1w: null, perf1m: null })),
+    metrics: {
+      '1D': { ...s.metrics['1D'], growth: NaN },
+      '1W': { ...s.metrics['1W'], growth: NaN },
+      '1M': { ...s.metrics['1M'], growth: NaN },
+      '1Y': { ...s.metrics['1Y'], growth: NaN },
+    },
+  }));
+}
+
+const SNAPSHOT_LS_KEY = 'snapshot-cache';
+
 /**
- * Initial sectors state — wipe seed perfs to null, then immediately hydrate
- * with anything in the localStorage cache. This means a returning user sees
- * their last-known real values right away while a background refresh runs.
- *
- * Returns the seeded sectors + the count of "warm" sectors (constituents
- * that came from cache, not just blank).
+ * Initial paint: apply the last snapshot we stashed in localStorage (instant),
+ * else blank. The fresh server snapshot is then loaded on mount and overrides.
  */
-function initialSectorsFromCache(): { sectors: Sector[]; warmCount: number } {
-  let warmCount = 0;
-  const sectors = baseSectors.map<Sector>(s => {
-    const blanked: Sector = {
-      ...s,
-      constituents: s.constituents.map(c => ({ ...c, perf1d: null, perf1w: null, perf1m: null })),
-      metrics: {
-        '1D': { ...s.metrics['1D'], growth: NaN },
-        '1W': { ...s.metrics['1W'], growth: NaN },
-        '1M': { ...s.metrics['1M'], growth: NaN },
-        '1Y': { ...s.metrics['1Y'], growth: NaN },
-      },
-    };
-    const { constituents, hits } = hydrateConstituentsFromCache(blanked.constituents);
-    if (hits > 0) {
-      warmCount++;
-      return recomputeSectorGrowth(blanked, constituents);
+function initialSectors(): { sectors: Sector[]; at: number | null } {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_LS_KEY);
+    if (raw) {
+      const snap = JSON.parse(raw) as MarketSnapshot;
+      if (snap?.tickers) {
+        return { sectors: applySnapshot(baseSectors, snap), at: Date.parse(snap.generatedAt) || null };
+      }
     }
-    return blanked;
-  });
-  return { sectors, warmCount };
+  } catch { /* ignore */ }
+  return { sectors: blankSectors(), at: null };
 }
 
 export default function App() {
@@ -57,43 +57,38 @@ export default function App() {
   // shows last-known real values immediately. Stale entries refresh in the
   // background; entries already inside the TTL window are a cache hit and
   // require no network call.
-  const initial = useMemo(() => initialSectorsFromCache(), []);
+  const initial = useMemo(() => initialSectors(), []);
   const [sectors, setSectors] = useState<Sector[]>(initial.sectors);
-
-  // Manual-refresh model: NO data is fetched automatically on load. The app
-  // shows whatever is in the localStorage cache; the user must press Refresh
-  // to pull fresh data from the network.
+  const [lastUpdated, setLastUpdated] = useState<number | null>(initial.at);
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshProgress, setRefreshProgress] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(() => {
-    const raw = localStorage.getItem('lastRefresh');
-    return raw ? Number(raw) : null;
-  });
   const refreshingRef = useRef(false);
 
-  async function refreshAllSectors() {
+  function applyAndStash(snap: MarketSnapshot) {
+    setSectors(applySnapshot(baseSectors, snap));
+    setLastUpdated(Date.parse(snap.generatedAt) || Date.now());
+    try { localStorage.setItem(SNAPSHOT_LS_KEY, JSON.stringify(snap)); } catch { /* quota */ }
+  }
+
+  // Auto-load the server-cached snapshot on every visit. The client never calls
+  // the upstream market APIs itself — the server (refresh script / GitHub
+  // Action) does that and publishes the snapshot.
+  useEffect(() => {
+    let cancelled = false;
+    loadSnapshot().then(snap => {
+      if (!cancelled && snap) applyAndStash(snap);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Manual "Refresh" = re-pull the server snapshot (cache-busted), NOT upstream.
+  async function reloadSnapshot() {
     if (refreshingRef.current) return;
     refreshingRef.current = true;
     setRefreshing(true);
-    setRefreshProgress(0);
     try {
-      let done = 0;
-      for (const seed of baseSectors) {
-        const { constituents } = await hydrateConstituents(seed.constituents);
-        const sectorWithPerfs = recomputeSectorGrowth(seed, constituents);
-        setSectors(prev => prev.map(s => (s.id === seed.id ? sectorWithPerfs : s)));
-        done += 1;
-        setRefreshProgress(done);
-        // Stream fundamentals in afterwards — they update the same sector.
-        hydrateFundamentals(constituents).then(withF => {
-          setSectors(prev => prev.map(s =>
-            s.id === seed.id ? recomputeSectorGrowth(seed, withF) : s
-          ));
-        });
-      }
-      const now = Date.now();
-      localStorage.setItem('lastRefresh', String(now));
-      setLastUpdated(now);
+      const snap = await loadSnapshot(true);
+      if (snap) applyAndStash(snap);
     } finally {
       refreshingRef.current = false;
       setRefreshing(false);
@@ -176,29 +171,25 @@ export default function App() {
     />
   );
 
-  // Compact global refresh control that lives in the sticky header (all pages).
+  // Compact control in the sticky header — re-pulls the server snapshot.
   const refreshSlot = (
     <div className="flex items-center gap-2">
-      {refreshing ? (
-        <span className="hidden sm:inline text-[10px] font-mono text-[#64748B] whitespace-nowrap">
-          {refreshProgress}/{sectors.length}
-        </span>
-      ) : lastUpdated ? (
+      {!refreshing && lastUpdated && (
         <span className="hidden md:inline text-[10px] text-[#64748B] whitespace-nowrap">
-          Updated {new Date(lastUpdated).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+          Updated {new Date(lastUpdated).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
         </span>
-      ) : null}
+      )}
       <button
-        onClick={refreshAllSectors}
+        onClick={reloadSnapshot}
         disabled={refreshing}
-        aria-label="Refresh market data"
-        title="Refresh market data"
+        aria-label="Reload latest market data"
+        title="Reload latest market data"
         className="inline-flex items-center gap-1.5 rounded-md px-2 sm:px-2.5 py-1.5 text-xs font-semibold bg-[#0284C7] text-white hover:bg-[#0369A1] disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-[#0284C7] focus:ring-offset-1"
       >
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className={refreshing ? 'animate-spin' : ''} aria-hidden="true">
           <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <span className="hidden sm:inline">{refreshing ? 'Refreshing' : 'Refresh'}</span>
+        <span className="hidden sm:inline">{refreshing ? 'Loading' : 'Refresh'}</span>
       </button>
     </div>
   );
@@ -229,6 +220,8 @@ export default function App() {
           onBack={handleBackToHome}
           onSelectSector={handleSelectSectorFromDetail}
           onSelectStock={handleSelectStock}
+          onRefresh={reloadSnapshot}
+          refreshing={refreshing}
         />
         <Footer />
       </>

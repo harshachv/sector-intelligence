@@ -1,0 +1,48 @@
+name: Refresh market data
+
+# Server-side data refresh. Fetches Yahoo Finance + stockanalysis.com (direct,
+# from the GitHub runner — not a Vercel function whose cloud IP Yahoo blocks),
+# regenerates public/data/snapshot.json, and commits it. Vercel auto-deploys
+# the new snapshot, and the client picks it up on the next visit/refresh.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Refresh mode'
+        type: choice
+        options: [delta, complete]
+        default: delta
+  schedule:
+    # Delta refresh hourly during US market hours (UTC), complete daily.
+    - cron: '17 13-21 * * 1-5'   # hourly-ish, weekdays (delta)
+    - cron: '30 22 * * 1-5'      # after close (delta)
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Refresh snapshot
+        run: node scripts/refresh.mjs --mode "${{ github.event.inputs.mode || 'delta' }}"
+      - name: Commit snapshot if changed
+        run: |
+          if [[ -n "$(git status --porcelain public/data/snapshot.json)" ]]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add public/data/snapshot.json
+            git commit -m "chore(data): refresh market snapshot (${{ github.event.inputs.mode || 'delta' }})"
+            git push
+          else
+            echo "No snapshot changes."
+          fi
