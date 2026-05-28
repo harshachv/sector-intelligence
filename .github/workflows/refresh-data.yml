@@ -4,6 +4,11 @@ name: Refresh market data
 # from the GitHub runner — not a Vercel function whose cloud IP Yahoo blocks),
 # regenerates public/data/snapshot.json, and commits it. Vercel auto-deploys
 # the new snapshot, and the client picks it up on the next visit/refresh.
+#
+# Schedule: 5:45 PM America/Chicago (Central) every day.
+# GitHub cron is UTC and does NOT observe DST, so we register both candidate
+# UTC times and gate the actual run to when it's 17:00 in America/Chicago —
+# this lands at 5:45 PM Central year-round (CDT and CST).
 
 on:
   workflow_dispatch:
@@ -11,12 +16,11 @@ on:
       mode:
         description: 'Refresh mode'
         type: choice
-        options: [delta, complete]
-        default: delta
+        options: [complete, delta]
+        default: complete
   schedule:
-    # Delta refresh hourly during US market hours (UTC), complete daily.
-    - cron: '17 13-21 * * 1-5'   # hourly-ish, weekdays (delta)
-    - cron: '30 22 * * 1-5'      # after close (delta)
+    - cron: '45 22 * * *'   # 17:45 Central during CDT (UTC-5)
+    - cron: '45 23 * * *'   # 17:45 Central during CST (UTC-6)
 
 permissions:
   contents: write
@@ -29,19 +33,38 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
+      - name: Gate to 17:00 America/Chicago (DST-safe)
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$(TZ=America/Chicago date +%H)" = "17" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Not 17:00 America/Chicago ($(TZ=America/Chicago date)) — skipping this UTC trigger."
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
       - uses: actions/setup-node@v4
+        if: steps.gate.outputs.run == 'true'
         with:
           node-version: 22
+
       - name: Refresh snapshot
-        run: node scripts/refresh.mjs --mode "${{ github.event.inputs.mode || 'delta' }}"
+        if: steps.gate.outputs.run == 'true'
+        run: node scripts/refresh.mjs --mode "${{ github.event.inputs.mode || 'complete' }}"
+
       - name: Commit snapshot if changed
+        if: steps.gate.outputs.run == 'true'
         run: |
           if [[ -n "$(git status --porcelain public/data/snapshot.json)" ]]; then
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add public/data/snapshot.json
-            git commit -m "chore(data): refresh market snapshot (${{ github.event.inputs.mode || 'delta' }})"
+            git commit -m "chore(data): daily refresh market snapshot (${{ github.event.inputs.mode || 'complete' }})"
             git push
           else
             echo "No snapshot changes."
