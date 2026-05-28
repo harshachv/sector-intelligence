@@ -19,3 +19,24 @@ html, body {
 #root {
   min-height: 100vh;
 }
+
+/* Always-visible thin horizontal scrollbar for wide data tables, so on
+   mobile/touch it's obvious the table scrolls sideways. */
+.table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #CBD5E1 #F1F5F9;
+  -webkit-overflow-scrolling: touch;
+}
+.table-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+.table-scroll::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 999px;
+}
+.table-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}

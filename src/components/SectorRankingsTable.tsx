@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import type { Sector, Timeframe } from '../types';
 import { fmtPct, perfTextColor, isMissing } from '../utils/fmt';
 import StatusBadge from './StatusBadge';
@@ -30,6 +31,31 @@ export default function SectorRankingsTable({ sectors, timeframe, onSelect }: Se
     return bg - ag;
   });
 
+  // Track horizontal scroll so we can show a right-edge fade hint while there
+  // are more columns off-screen (and a swipe prompt on mobile).
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollable, setScrollable] = useState(false);
+  const [atEnd, setAtEnd] = useState(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => {
+      const more = el.scrollWidth > el.clientWidth + 1;
+      setScrollable(more);
+      setAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 1);
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => {
+      el.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, [ranked.length]);
+
+  const showFade = scrollable && !atEnd;
+
   return (
     <section aria-labelledby="rankings-heading">
       <div className="flex items-center gap-3 mb-3">
@@ -42,9 +68,17 @@ export default function SectorRankingsTable({ sectors, timeframe, onSelect }: Se
         <span className="text-[11px] text-[#64748B] hidden sm:inline ml-auto">
           Click a sector to open its stocks
         </span>
+        <span className="text-[11px] text-[#64748B] sm:hidden ml-auto whitespace-nowrap">
+          Swipe table →
+        </span>
       </div>
-      <div className="bg-white rounded-lg border border-[#E2E8F0] shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="relative bg-white rounded-lg border border-[#E2E8F0] shadow-sm overflow-hidden">
+        {/* Right-edge fade cue: signals more columns are scrollable into view */}
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute top-0 right-0 bottom-0 w-8 bg-gradient-to-l from-white to-transparent transition-opacity duration-200 ${showFade ? 'opacity-100' : 'opacity-0'}`}
+        />
+        <div ref={scrollRef} className="overflow-x-auto table-scroll">
           <table className="min-w-full text-sm" role="table">
             <thead>
               <tr className="bg-[#F1F5F9] border-b border-[#E2E8F0]">

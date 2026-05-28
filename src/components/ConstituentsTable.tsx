@@ -45,7 +45,7 @@ export default function ConstituentsTable({ constituents, onSelectStock }: Const
         )}
       </div>
       <div className="bg-white rounded-lg border border-[#E2E8F0] shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto table-scroll">
           <table className="min-w-full text-sm" role="table">
             <thead>
               <tr className="bg-[#F1F5F9] border-b border-[#E2E8F0]">
