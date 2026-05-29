@@ -42,6 +42,10 @@ const MAX_AGE_HOURS = Number(arg('max-age-hours', '12'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const round2 = (n) => Math.round(n * 100) / 100;
 
+// Display ticker → symbol stockanalysis.com serves under (renames/relistings).
+const SYMBOL_ALIAS = { FI: 'FISV' };
+const saSymbol = (ticker) => (SYMBOL_ALIAS[ticker.toUpperCase()] ?? ticker).toLowerCase();
+
 async function fetchJSON(url) {
   for (let attempt = 0; attempt < RETRIES; attempt++) {
     try {
@@ -64,25 +68,22 @@ async function readTickers() {
   return [...set];
 }
 
-// ---------- Yahoo perfs ----------
+// ---------- stockanalysis perfs (from daily OHLCV history) ----------
+// Yahoo now 429s server *and* residential IPs, so perfs come from the same
+// reachable source as fundamentals: stockanalysis.com's history endpoint.
+// Rows are newest-first: { t, o, h, l, c, a, v, ch }.
 async function fetchPerfs(ticker) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=3mo`;
+  const url = `https://stockanalysis.com/api/symbol/s/${encodeURIComponent(saSymbol(ticker))}/history?range=1Y&period=Daily`;
   const json = await fetchJSON(url);
-  const r = json?.chart?.result?.[0];
-  const q = r?.indicators?.quote?.[0];
-  if (!r?.timestamp || !q?.close) return null;
-  const closes = [];
-  for (let i = 0; i < r.timestamp.length; i++) {
-    if (q.close[i] != null) closes.push(q.close[i]);
-  }
+  if (json?.status !== 200 || !Array.isArray(json.data) || json.data.length < 2) return null;
+  // closes, newest-first
+  const closes = json.data.map((r) => r.c).filter((c) => c != null);
   if (closes.length < 2) return null;
-  const meta = r.meta ?? {};
-  const last = meta.regularMarketPrice ?? closes[closes.length - 1];
-  const prevClose = meta.previousClose ?? meta.chartPreviousClose ?? closes[closes.length - 2];
-  const at = (off) => closes[Math.max(0, closes.length - 1 - off)];
+  const last = closes[0];
+  const at = (off) => closes[Math.min(closes.length - 1, off)];
   const pct = (from) => (from === 0 ? 0 : ((last - from) / from) * 100);
   return {
-    perf1d: round2(prevClose === 0 ? 0 : ((last - prevClose) / prevClose) * 100),
+    perf1d: round2(pct(at(1))),
     perf1w: round2(pct(at(5))),
     perf1m: round2(pct(at(21))),
   };
@@ -98,7 +99,7 @@ function parseHover(s) {
   return Number.isFinite(n) ? n : null;
 }
 async function fetchFundamentals(ticker) {
-  const url = `https://stockanalysis.com/api/symbol/s/${encodeURIComponent(ticker.toLowerCase())}/statistics`;
+  const url = `https://stockanalysis.com/api/symbol/s/${encodeURIComponent(saSymbol(ticker))}/statistics`;
   const json = await fetchJSON(url);
   if (json?.status !== 200 || !json.data) return null;
   const mc = findItem(json.data.valuation, 'marketcap');

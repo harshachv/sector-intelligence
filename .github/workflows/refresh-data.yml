@@ -1,9 +1,9 @@
 name: Refresh market data
 
-# Server-side data refresh. Fetches Yahoo Finance + stockanalysis.com (direct,
-# from the GitHub runner — not a Vercel function whose cloud IP Yahoo blocks),
-# regenerates public/data/snapshot.json, and commits it. Vercel auto-deploys
-# the new snapshot, and the client picks it up on the next visit/refresh.
+# Server-side data refresh. Fetches perfs + fundamentals from stockanalysis.com
+# (direct Node fetch from the GitHub runner), regenerates
+# public/data/snapshot.json, and commits it. Vercel auto-deploys the new
+# snapshot, and the client picks it up on the next visit/refresh.
 #
 # Schedule: 5:45 PM America/Chicago (Central) every day.
 # GitHub cron is UTC and does NOT observe DST, so we register both candidate

@@ -112,28 +112,53 @@ export default function StockDetailPage({ sector, stock, onBack }: StockDetailPa
 
   const [refreshing, setRefreshing] = useState(false);
 
-  // CACHE-ONLY on mount — never auto-fetch. Read whatever OHLCV / fundamentals
-  // are already cached; if nothing is cached the chart shows an empty state
-  // and prompts the user to Refresh.
+  // On mount: paint instantly from cache, then auto-load from the network when
+  // the cache is empty/stale. OHLCV + fundamentals come straight from
+  // stockanalysis.com (direct, CORS-allowed), so this is fast and reliable —
+  // no flaky proxy, no manual Refresh required to see the chart.
   useEffect(() => {
+    let cancelled = false;
+
     const cached = getCachedCandles(stock.ticker);
     if (cached) {
       setAllCandles(cached.candles);
       setCandleSource('live');
-      if (cached.current != null && cached.changePct != null) {
-        setLiveQuote({ current: cached.current, changePct: cached.changePct });
-      } else {
-        setLiveQuote(null);
-      }
+      setLiveQuote(
+        cached.current != null && cached.changePct != null
+          ? { current: cached.current, changePct: cached.changePct }
+          : null
+      );
     } else {
       setAllCandles([]);
-      setCandleSource('idle');
       setLiveQuote(null);
     }
-    setFundamentals(stock.fundamentals ?? getCachedFundamentals(stock.ticker));
+    const cachedFund = stock.fundamentals ?? getCachedFundamentals(stock.ticker);
+    setFundamentals(cachedFund);
+
+    // Nothing cached → fetch now so the user never stares at an empty chart.
+    if (!cached) {
+      setCandleSource('loading');
+      (async () => {
+        const res = await getCandles(stock.ticker);
+        if (cancelled) return;
+        setAllCandles(res.candles);
+        setCandleSource(res.source);
+        if (res.source === 'live' && res.current != null && res.changePct != null) {
+          setLiveQuote({ current: res.current, changePct: res.changePct });
+        }
+      })();
+    }
+    if (cachedFund === undefined) {
+      (async () => {
+        const f = await getFundamentals(stock.ticker);
+        if (!cancelled) setFundamentals(f);
+      })();
+    }
+
+    return () => { cancelled = true; };
   }, [stock.ticker, stock.fundamentals]);
 
-  // Network fetch — only on explicit user Refresh.
+  // Explicit user Refresh — force a fresh network pull (bypasses the paint cache).
   async function refreshStock() {
     if (refreshing) return;
     setRefreshing(true);

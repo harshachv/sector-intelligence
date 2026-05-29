@@ -11,8 +11,11 @@
  */
 
 import type { Candle, Constituent, Fundamentals, Sector } from '../types';
-import { fetchChart, perfsFromCandles, readCachedChart } from './yahoo';
-import { fetchFundamentals, readCachedFundamentals } from './stockanalysis';
+import { perfsFromCandles } from './yahoo';
+import {
+  fetchFundamentals, readCachedFundamentals,
+  fetchChartHistory, readCachedChartHistory,
+} from './stockanalysis';
 import { fundamentalsFromSnapshot, type MarketSnapshot } from './snapshot';
 
 /**
@@ -59,7 +62,7 @@ export type { Fundamentals };
  * never auto-fetch on mount.
  */
 export function getCachedCandles(ticker: string): CandleResult | null {
-  const cached = readCachedChart(ticker, '1y', '1d');
+  const cached = readCachedChartHistory(ticker);
   if (!cached || cached.candles.length === 0) return null;
   return {
     candles: cached.candles,
@@ -83,7 +86,7 @@ export function getCachedFundamentals(ticker: string): Fundamentals | null | und
  * back to mock so the UI can show "Data unavailable".
  */
 export async function getCandles(ticker: string): Promise<CandleResult> {
-  const live = await fetchChart(ticker, '1y', '1d');
+  const live = await fetchChartHistory(ticker);
   if (live && live.candles.length > 0) {
     return {
       candles: live.candles,
@@ -110,7 +113,7 @@ export async function hydrateConstituents(
   const failedTickers: string[] = [];
   const results: Constituent[] = [];
   for (const c of constituents) {
-    const chart = await fetchChart(c.ticker, '3mo', '1d');
+    const chart = await fetchChartHistory(c.ticker);
     const perfs = chart ? perfsFromCandles(chart.candles, chart.quote?.current) : null;
     if (!chart || !perfs) {
       failedTickers.push(c.ticker);
@@ -170,7 +173,7 @@ export function hydrateConstituentsFromCache(constituents: Constituent[]): {
 } {
   let hits = 0;
   const out = constituents.map<Constituent>(c => {
-    const chart = readCachedChart(c.ticker, '3mo', '1d');
+    const chart = readCachedChartHistory(c.ticker);
     const cachedFund = readCachedFundamentals(c.ticker);
     if (!chart) {
       return { ...c, perf1d: null, perf1w: null, perf1m: null, fundamentals: cachedFund };

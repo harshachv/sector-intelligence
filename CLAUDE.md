@@ -20,16 +20,43 @@ The app is inspired by a dense finance-terminal dashboard, but the final UI must
 
 ## Data architecture — server-side cached snapshot (current model)
 
-The client no longer calls the upstream market APIs. Instead:
+**Single data source: stockanalysis.com.** Yahoo Finance was dropped — it now
+returns HTTP 429 from *both* cloud and residential IPs, so neither the refresh
+script nor the browser-proxy path could reach it reliably. stockanalysis.com
+serves daily OHLCV history *and* fundamentals, is reachable from normal IPs, and
+crucially sends `Access-Control-Allow-Origin: *` so the **browser calls it
+directly — no CORS proxy** (`saFetch` in `src/data/stockanalysis.ts`).
 
-- **`public/data/snapshot.json`** is a server-side cache: a per-ticker map of perfs + fundamentals (`src/data/snapshot.ts` defines the shape). The client **auto-loads it on every visit** and applies it to the sector universe (`applySnapshot` in `dataProvider.ts`). A copy is stashed in `localStorage` (`snapshot-cache`) for instant paint.
-- **Refresh** (header button, sector-detail button) = **re-pull the snapshot** (cache-busted), NOT the upstream APIs. So normal use never hammers the public proxies.
-- **`scripts/refresh.mjs`** is the only thing that hits upstream (Yahoo + stockanalysis, direct Node fetch). Run it where IPs aren't blocked — locally or CI, NOT a Vercel function:
+Two data paths:
+
+1. **Sector/home (perfs + fundamentals) → snapshot.** `public/data/snapshot.json`
+   is a server-side cache: a per-ticker map of perfs + fundamentals
+   (`src/data/snapshot.ts` defines the shape). The client **auto-loads it on
+   every visit** and applies it to the sector universe (`applySnapshot` in
+   `dataProvider.ts`). A copy is stashed in `localStorage` (`snapshot-cache`) for
+   instant paint. The **Refresh** buttons (header, sector detail) just re-pull
+   the snapshot (cache-busted), never upstream.
+2. **Stock detail (chart OHLCV) → direct, on demand.** The stock page
+   **auto-fetches** ~1y of daily candles + fundamentals straight from
+   stockanalysis.com on open (`fetchChartHistory`), cached 6h in localStorage.
+   This is reliable now (direct CORS, no proxy), so the chart loads without a
+   manual Refresh. Candles are *not* stored in the snapshot (keeps it ~84KB).
+
+- **`scripts/refresh.mjs`** regenerates the snapshot from stockanalysis.com
+  (direct Node fetch). Run locally or via CI:
   - `npm run refresh` → **complete** (every ticker)
   - `npm run refresh:delta` → **delta** (only tickers whose `updatedAt` is older than `--max-age-hours`, default 12)
-  - It writes `public/data/snapshot.json`.
-- **`.github/workflows/refresh-data.yml`** runs the script on a schedule (delta) + manual `workflow_dispatch` (choose complete/delta), commits the snapshot → Vercel auto-deploys → clients get the latest on next load.
-- The committed seed snapshot covers the top ~160 tickers by market cap; the rest show "—" until a full `npm run refresh`. Stock-detail **chart OHLCV is still fetched client-side on demand** (candles aren't in the snapshot) and cached in localStorage.
+- **`.github/workflows/refresh-data.yml`** runs the script daily at 5:45 PM
+  America/Chicago (DST-safe gate) + manual `workflow_dispatch`, commits the
+  snapshot → Vercel auto-deploys → clients get the latest on next load.
+- The snapshot covers **390 unique tickers; ~375 populated**. The ~15 that show
+  "—" are foreign ADRs (Nintendo, Tencent, BYD, ABB, Fanuc, Keyence, Samsung,
+  Zealand, Kiri) and delisted/restructured names (Hess→Chevron, iRobot, Maxeon,
+  US Cellular, Altice, Pure Storage) that have no clean free data — left as "—"
+  per the no-fake-data policy.
+- **Symbol aliases:** `SYMBOL_ALIAS` (in both `stockanalysis.ts` and
+  `refresh.mjs`) maps a display ticker to the symbol stockanalysis indexes it
+  under for renames (e.g. `FI → FISV`), keeping the displayed ticker correct.
 
 ## Responsive Sector Rankings table
 
